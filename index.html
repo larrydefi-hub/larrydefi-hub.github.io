@@ -534,7 +534,7 @@ hr.s{border:none;height:1px;background:var(--line);margin:14px 0}
       <div class="card">
         <textarea class="in" id="st-text" style="min-height:110px" placeholder="SPY reclaimed the 20-day and closed at highs. Breadth confirmed the move — 78% of names green. Tomorrow I'm watching 640 as the pivot…"></textarea>
         <div class="frow" style="margin-top:10px">
-          <div><label class="f" for="st-voice" style="margin-top:0">Voice</label><select class="in" id="st-voice"></select></div>
+          <div><label class="f" for="st-voice" style="margin-top:0">Preview voice (phone)</label><select class="in" id="st-voice"></select></div>
           <div><label class="f" for="st-rate" style="margin-top:0">Pace</label>
             <select class="in" id="st-rate"><option value="0.9">Calm</option><option value="1" selected>Natural</option><option value="1.15">Energetic</option></select>
           </div>
@@ -1298,11 +1298,22 @@ async function renderLbCloud(){
 let ST = { playing:false, words:[], wi:0, raf:0 };
 function loadVoices(){
   if(!('speechSynthesis' in window)){ $('st-voice').innerHTML='<option>Not supported</option>'; return; }
-  const vs = speechSynthesis.getVoices().filter(v=>v.lang.startsWith('en'));
+  const vs = speechSynthesis.getVoices();
   $('st-voice').innerHTML = vs.length
-    ? vs.map((v,i)=>`<option value="${i}">${esc(v.name.replace(/(Microsoft|Google|Apple)\s*/,'').slice(0,24))}</option>`).join('')
+    ? vs.map((v,i)=>`<option value="${i}">${esc(v.name.replace(/(Microsoft|Google|Apple)\s*/,'').slice(0,20))} · ${esc(v.lang)}</option>`).join('')
     : '<option>Default voice</option>';
   ST.voices=vs;
+  syncPreviewVoice();
+}
+function syncPreviewVoice(){
+  if(!ST.voices || !ST.voices.length) return;
+  const sel=($('st-lang').value||'en-us').toLowerCase();       // e.g. 'en-gb', 'pt'
+  const primary=sel.split('-')[0];                              // 'en', 'pt'
+  const norm=v=>v.lang.toLowerCase().replace('_','-');
+  let i=ST.voices.findIndex(v=>norm(v).startsWith(sel));        // exact locale match first
+  if(i<0 && primary!=='en') i=ST.voices.findIndex(v=>norm(v).startsWith(primary));
+  if(i<0 && sel==='pt') i=ST.voices.findIndex(v=>norm(v).startsWith('pt-br'));
+  if(i>=0) $('st-voice').value=i;
 }
 function updWords(){
   const t=$('st-text').value.trim();
@@ -1445,6 +1456,7 @@ function bootUI(){
   loadVoices();
   if('speechSynthesis' in window && speechSynthesis.onvoiceschanged!==undefined) speechSynthesis.onvoiceschanged=loadVoices;
   $('st-text').addEventListener('input', updWords);
+  $('st-lang').addEventListener('change', syncPreviewVoice);
 }
 </script>
 </body>
