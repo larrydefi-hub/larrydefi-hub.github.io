@@ -942,25 +942,45 @@ function setChart(sym,btn){
 
 /* ---------- live quotes via Finnhub (optional) ---------- */
 let _liveOK=false;
-const CRYPTO={BTC:'BTCUSDT', SOL:'SOLUSDT'};
+function tFetch(url, ms){
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(), ms||8000);
+  return fetch(url,{signal:c.signal}).finally(()=>clearTimeout(t));
+}
+function markLive(){
+  if(_liveOK) return; _liveOK=true;
+  $('mkt-pill').textContent='LIVE';
+  const l=document.querySelector('.eyebrow .lnk'); if(l) l.textContent='LIVE FEED';
+}
 async function fetchQuotes(){
-  await Promise.all(Object.keys(S.prices).map(async k=>{
+  // Crypto via CoinGecko: one call for both coins, CORS-friendly, not region-blocked
+  tFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,solana&vs_currencies=usd&include_24hr_change=true')
+    .then(r=>r.json()).then(q=>{
+      const map={BTC:'bitcoin', SOL:'solana'}; let ok=false;
+      for(const k in map){
+        const d=q[map[k]];
+        if(d && d.usd){
+          const P=S.prices[k]; P.p=d.usd;
+          const ch=d.usd_24h_change||0; P.o=d.usd/(1+ch/100);
+          P.live=true; ok=true;
+          P.hist.push(P.p); if(P.hist.length>60)P.hist.shift();
+        }
+      }
+      if(ok){ markLive(); renderTape(); renderMarkets(); }
+    }).catch(()=>{ /* crypto stays on sim */ });
+  // Stocks via Finnhub, each with its own timeout so one slow call can't jam the rest
+  if(!CFG.FINNHUB_KEY) return;
+  await Promise.all(['SPY','QQQ','TSLA','IWM'].map(async k=>{
     try{
-      const P=S.prices[k];
-      if(CRYPTO[k]){
-        const r=await fetch('https://api.binance.com/api/v3/ticker/24hr?symbol='+CRYPTO[k]);
-        const q=await r.json();
-        if(q && q.lastPrice){ P.p=+q.lastPrice; P.o=(+q.openPrice)||P.o; P.live=true; P.hist.push(P.p); if(P.hist.length>60)P.hist.shift(); }
-      } else if(CFG.FINNHUB_KEY){
-        const r=await fetch('https://finnhub.io/api/v1/quote?symbol='+k+'&token='+CFG.FINNHUB_KEY);
-        const q=await r.json();
-        if(q && q.c){ P.p=q.c; P.o=q.o||P.o; P.live=true; P.hist.push(q.c); if(P.hist.length>60)P.hist.shift(); }
+      const r=await tFetch('https://finnhub.io/api/v1/quote?symbol='+k+'&token='+CFG.FINNHUB_KEY);
+      const q=await r.json();
+      if(q && q.c){
+        const P=S.prices[k]; P.p=q.c; P.o=q.o||P.o; P.live=true;
+        P.hist.push(q.c); if(P.hist.length>60)P.hist.shift();
+        markLive();
       }
     }catch(e){ /* this symbol stays on sim */ }
   }));
-  const live=Object.values(S.prices).some(P=>P.live);
-  if(live && !_liveOK){ _liveOK=true; $('mkt-pill').textContent='LIVE'; document.querySelector('.eyebrow .lnk').textContent='LIVE FEED'; }
-  if(live){ renderTape(); renderMarkets(); }
+  if(_liveOK){ renderTape(); renderMarkets(); }
 }
 
 /* ---------- navigation ---------- */
